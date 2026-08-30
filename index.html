@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>KinAssist AI: Voice Companion for Seniors</title>
+  <meta name="description" content="Real-time multilingual voice companion for elderly seniors and caregivers powered by Gemini Live API, Vertex AI, and Firestore.">
+  <meta property="og:title" content="KinAssist AI: Voice Companion for Seniors">
+  <meta property="og:description" content="Real-time multilingual voice companion for elderly seniors and caregivers powered by Gemini Live API, Vertex AI, and Firestore.">
+  <style>
+    :root {
+      --primary: #1A237E;
+      --primary-dark: #0D144A;
+      --primary-light: #303F9F;
+      --accent-green: #00C853;
+      --accent-green-glow: rgba(0, 200, 83, 0.4);
+      --accent-red: #D50000;
+      --accent-red-glow: rgba(213, 0, 0, 0.4);
+      --bg-screen: #0F172A;
+      --card-bg: #FFFFFF;
+      --card-border: #CBD5E1;
+      --text-dark: #0F172A;
+      --text-muted: #334155;
+      --text-light: #FFFFFF;
+      --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      font-family: var(--font-main);
+      background-color: var(--bg-screen);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 12px;
+      color: var(--text-dark);
+    }
+
+    /* Strict Mobile Viewport Container (Max 430px) */
+    .mobile-app-frame {
+      width: 100%;
+      max-width: 430px;
+      min-height: 92vh;
+      background: #F8FAFC;
+      border-radius: 36px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45), 0 0 0 2px rgba(255, 255, 255, 0.1);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Accessibility High Contrast Mode */
+    body.high-contrast-mode .mobile-app-frame {
+      background: #FFFFFF;
+      border: 4px solid #000000;
+    }
+
+    body.high-contrast-mode .dialogue-card {
+      border: 3px solid #000000;
+    }
+
+    body.high-contrast-mode .dialogue-text {
+      color: #000000;
+      font-weight: 800;
+    }
+
+    /* Header Bar */
+    .header-bar {
+      background-color: var(--primary);
+      color: var(--text-light);
+      padding: 20px 20px 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 3px solid rgba(0, 0, 0, 0.15);
+    }
+
+    .brand-title {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .brand-name {
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .brand-tagline {
+      font-size: 16px;
+      font-weight: 600;
+      opacity: 0.9;
+      color: #BBDEFB;
+      margin-top: 2px;
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .btn-a11y {
+      background: rgba(255, 255, 255, 0.2);
+      color: #FFFFFF;
+      border: 2px solid #FFFFFF;
+      border-radius: 14px;
+      font-size: 16px;
+      font-weight: 800;
+      padding: 8px 12px;
+      cursor: pointer;
+      min-height: 44px;
+    }
+
+    /* Main Interaction Body */
+    .app-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 18px;
+      gap: 18px;
+      overflow-y: auto;
+    }
+
+    /* Live Status Banner */
+    .status-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      background: #E2E8F0;
+      border: 2px solid #94A3B8;
+      border-radius: 20px;
+      padding: 12px 18px;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .status-badge.connected {
+      background: #E8F5E9;
+      border-color: var(--accent-green);
+      color: #1B5E20;
+    }
+
+    .status-badge.speaking {
+      background: #E3F2FD;
+      border-color: var(--primary-light);
+      color: var(--primary-dark);
+    }
+
+    .status-badge.urgent {
+      background: #FFEBEE;
+      border-color: var(--accent-red);
+      color: #B71C1C;
+      animation: alertPulse 1.2s infinite;
+    }
+
+    .status-dot {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #64748B;
+    }
+
+    .status-badge.connected .status-dot {
+      background: var(--accent-green);
+      box-shadow: 0 0 10px var(--accent-green);
+    }
+
+    .status-badge.speaking .status-dot {
+      background: #2196F3;
+      box-shadow: 0 0 10px #2196F3;
+    }
+
+    .status-badge.urgent .status-dot {
+      background: var(--accent-red);
+      box-shadow: 0 0 12px var(--accent-red);
+    }
+
+    /* Giant Central Voice Visualizer & Call Button */
+    .visualizer-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 14px 0 8px 0;
+      position: relative;
+    }
+
+    .voice-halo-wrapper {
+      position: relative;
+      width: 210px;
+      height: 210px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .pulse-ring {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: var(--primary-light);
+      opacity: 0;
+      transform: scale(0.9);
+      pointer-events: none;
+    }
+
+    .is-live .pulse-ring.ring-1 {
+      animation: ripple 2.2s cubic-bezier(0.25, 0.8, 0.25, 1) infinite;
+    }
+
+    .is-live .pulse-ring.ring-2 {
+      animation: ripple 2.2s cubic-bezier(0.25, 0.8, 0.25, 1) 0.7s infinite;
+    }
+
+    .main-call-button {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: linear-gradient(145deg, var(--primary), #0D144A);
+      border: 6px solid #FFFFFF;
+      box-shadow: 0 14px 35px rgba(26, 35, 126, 0.45);
+      color: #FFFFFF;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      position: relative;
+      z-index: 10;
+      transition: transform 0.15s ease, background 0.3s ease, border-color 0.3s ease;
+      user-select: none;
+      text-align: center;
+      padding: 12px;
+    }
+
+    .main-call-button:active {
+      transform: scale(0.94);
+    }
+
+    .main-call-button.active {
+      background: linear-gradient(145deg, #00C853, #007E33);
+      box-shadow: 0 14px 35px var(--accent-green-glow);
+      border-color: #FFFFFF;
+    }
+
+    .main-call-button.ai-speaking {
+      background: linear-gradient(145deg, #1565C0, #0D47A1);
+      box-shadow: 0 14px 35px rgba(33, 150, 243, 0.5);
+    }
+
+    .btn-icon {
+      font-size: 52px;
+      line-height: 1;
+      margin-bottom: 6px;
+    }
+
+    .btn-label {
+      font-size: 22px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .call-instruction {
+      margin-top: 14px;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-dark);
+      text-align: center;
+    }
+
+    /* Live Subtitle & Transcript Card */
+    .dialogue-card {
+      background: var(--card-bg);
+      border: 3px solid var(--card-border);
+      border-radius: 24px;
+      padding: 18px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: 150px;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+
+    .dialogue-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 2px solid #E2E8F0;
+      padding-bottom: 6px;
+    }
+
+    .dialogue-title {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--primary);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .dialogue-entry {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .dialogue-speaker {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--primary-light);
+    }
+
+    .dialogue-speaker.user {
+      color: #2E7D32;
+    }
+
+    .dialogue-text {
+      font-size: 24px;
+      font-weight: 600;
+      line-height: 1.35;
+      color: var(--text-dark);
+      word-break: break-word;
+    }
+
+    /* Action Notification Toast / Feed */
+    .action-feed {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .action-badge {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: #FFFFFF;
+      border: 2px solid #90CAF9;
+      border-left: 8px solid var(--primary);
+      border-radius: 16px;
+      padding: 12px 16px;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-dark);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      animation: slideIn 0.3s ease;
+    }
+
+    .action-badge.urgent-alert {
+      border-color: var(--accent-red);
+      border-left-color: var(--accent-red);
+      background: #FFEBEE;
+      color: #B71C1C;
+    }
+
+    /* Bottom Emergency & Control Bar */
+    .bottom-bar {
+      background: #FFFFFF;
+      padding: 16px 20px 24px 20px;
+      border-top: 3px solid #E2E8F0;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .btn-emergency {
+      width: 100%;
+      min-height: 68px;
+      background: var(--accent-red);
+      border: 3px solid #B71C1C;
+      border-radius: 20px;
+      color: #FFFFFF;
+      font-size: 24px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      cursor: pointer;
+      box-shadow: 0 8px 24px var(--accent-red-glow);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      transition: transform 0.1s ease;
+    }
+
+    .btn-emergency:active {
+      transform: scale(0.96);
+    }
+
+    .btn-controls-row {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn-sub-control {
+      flex: 1;
+      min-height: 52px;
+      background: #E2E8F0;
+      border: 2px solid #94A3B8;
+      border-radius: 16px;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-dark);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-sub-control:active {
+      background: #CBD5E1;
+    }
+
+    /* Animations */
+    @keyframes ripple {
+      0% {
+        transform: scale(0.9);
+        opacity: 0.8;
+      }
+
+      100% {
+        transform: scale(1.45);
+        opacity: 0;
+      }
+    }
+
+    @keyframes alertPulse {
+
+      0%,
+      100% {
+        transform: scale(1);
+      }
+
+      50% {
+        transform: scale(1.02);
+      }
+    }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* Caregiver Cloud Logs Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(15, 23, 42, 0.75);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+      backdrop-filter: blur(4px);
+    }
+
+    .modal-backdrop.is-open {
+      display: flex;
+    }
+
+    .modal-dialog {
+      background: #FFFFFF;
+      width: 100%;
+      max-width: 420px;
+      max-height: 85vh;
+      border-radius: 20px;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      overflow: hidden;
+      animation: slideIn 0.2s ease;
+    }
+
+    .modal-header {
+      background: var(--primary);
+      color: #FFFFFF;
+      padding: 16px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .modal-title {
+      font-size: 18px;
+      font-weight: 800;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn-modal-close {
+      background: rgba(255, 255, 255, 0.2);
+      border: none;
+      color: #FFFFFF;
+      font-size: 20px;
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-body {
+      padding: 16px;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #F8FAFC;
+    }
+
+    .log-card {
+      background: #FFFFFF;
+      border: 1.5px solid #E2E8F0;
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 14px;
+    }
+
+    .log-card.urgent {
+      border-color: var(--accent-red);
+      background: #FFF5F5;
+    }
+
+    .log-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-weight: 700;
+    }
+
+    .log-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 8px;
+      text-transform: uppercase;
+      font-weight: 800;
+    }
+
+    .log-tag.tech { background: #E0E7FF; color: #3730A3; }
+    .log-tag.task { background: #DCFCE7; color: #166534; }
+    .log-tag.alert { background: #FEE2E2; color: #991B1B; }
+
+    .log-time {
+      font-size: 11px;
+      color: #64748B;
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Strict Mobile Frame (Max-Width: 430px) -->
+  <div class="mobile-app-frame" id="appFrame">
+
+    <!-- Top Header -->
+    <header class="header-bar">
+      <div class="brand-title">
+        <div class="brand-name">
+          <span>👵 KinAssist AI</span>
+        </div>
+        <div class="brand-tagline">Your Caring Voice Companion</div>
+      </div>
+      <div class="header-actions" style="display: flex; gap: 8px;">
+        <button class="btn-a11y" id="btnOpenLogs" title="Caregiver Cloud Logs" style="font-size: 15px; width: auto; padding: 0 10px;">
+          📋 Logs
+        </button>
+        <button class="btn-a11y" id="btnToggleA11y" title="Toggle Extra Large Contrast">
+          A+
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="app-content">
+
+      <!-- Live Status Pill -->
+      <div class="status-badge" id="statusBadge">
+        <div class="status-dot"></div>
+        <span id="statusText">Tap Large Button to Talk</span>
+      </div>
+
+      <!-- Giant Interactive Call Halo & Button -->
+      <div class="visualizer-container">
+        <div class="voice-halo-wrapper" id="haloWrapper">
+          <div class="pulse-ring ring-1"></div>
+          <div class="pulse-ring ring-2"></div>
+          <button class="main-call-button" id="mainCallButton" aria-label="Start conversation with KinAssist">
+            <span class="btn-icon" id="callIcon">🎙️</span>
+            <span class="btn-label" id="callLabel">TALK</span>
+          </button>
+        </div>
+        <div class="call-instruction" id="callInstruction">
+          Press button to speak
+        </div>
+      </div>
+
+      <!-- Real-Time Subtitles & Transcript Card -->
+      <div class="dialogue-card" id="dialogueCard">
+        <div class="dialogue-header">
+          <span class="dialogue-title">Live Conversation</span>
+          <span style="font-size: 16px; font-weight: 700; color: #64748B;" id="liveIndicator">Ready</span>
+        </div>
+        <div class="dialogue-entry" id="currentSpeechEntry">
+          <div class="dialogue-speaker" id="currentSpeaker">💙 KinAssist:</div>
+          <div class="dialogue-text" id="currentSubtitle">
+            "Press the button and start speaking in any language. I am listening..."
+          </div>
+        </div>
+      </div>
+
+      <!-- Agentic Actions Feed -->
+      <div class="action-feed" id="actionFeed"></div>
+
+    </main>
+
+    <!-- Bottom Emergency Bar & Controls -->
+    <footer class="bottom-bar">
+      <button class="btn-emergency" id="btnEmergency">
+        <span>🚨 EMERGENCY HELP</span>
+      </button>
+      <div class="btn-controls-row">
+        <button class="btn-sub-control" id="btnMute">
+          <span id="muteIcon">🔊</span>
+          <span id="muteLabel">Mute</span>
+        </button>
+        <button class="btn-sub-control" id="btnEndCall" style="color: #B71C1C;">
+          <span>🛑</span>
+          <span>End Chat</span>
+        </button>
+      </div>
+    </footer>
+
+  </div>
+
+  <!-- Caregiver Cloud Logs Modal -->
+  <div class="modal-backdrop" id="logsModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title">
+          <span>📋 Caregiver & Firestore Logs</span>
+        </div>
+        <button class="btn-modal-close" id="btnCloseLogs">✕</button>
+      </div>
+      <div class="modal-body" id="logsContainer">
+        <div style="text-align: center; color: #64748B; padding: 20px;">Loading logs from Firestore...</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ---------------------------------------------------------------------------
+    // State Variables
+    // ---------------------------------------------------------------------------
+    let isConnected = false;
+    let isAIspeaking = false;
+    let isMuted = false;
+    let highContrast = false;
+
+    let ws = null;
+    let audioContext = null;
+    let micStream = null;
+    let micSource = null;
+    let scriptProcessor = null;
+    let analyserNode = null;
+    let animFrameId = null;
+
+    let nextPlayTime = 0;
+    let activeAudioSources = [];
+
+    // DOM Elements
+    const appFrame = document.getElementById("appFrame");
+    const statusBadge = document.getElementById("statusBadge");
+    const statusText = document.getElementById("statusText");
+    const haloWrapper = document.getElementById("haloWrapper");
+    const mainCallButton = document.getElementById("mainCallButton");
+    const callIcon = document.getElementById("callIcon");
+    const callLabel = document.getElementById("callLabel");
+    const callInstruction = document.getElementById("callInstruction");
+    const currentSpeaker = document.getElementById("currentSpeaker");
+    const currentSubtitle = document.getElementById("currentSubtitle");
+    const liveIndicator = document.getElementById("liveIndicator");
+    const actionFeed = document.getElementById("actionFeed");
+    const btnEmergency = document.getElementById("btnEmergency");
+    const btnMute = document.getElementById("btnMute");
+    const muteIcon = document.getElementById("muteIcon");
+    const btnEndCall = document.getElementById("btnEndCall");
+    const btnToggleA11y = document.getElementById("btnToggleA11y");
+
+    // ---------------------------------------------------------------------------
+    // UI Helpers & Status Update
+    // ---------------------------------------------------------------------------
+    function updateUIState(state, message) {
+      statusBadge.className = "status-badge " + state;
+      statusText.textContent = message;
+
+      if (state === "connected") {
+        haloWrapper.classList.add("is-live");
+        mainCallButton.className = "main-call-button active";
+        callIcon.textContent = "👂";
+        callLabel.textContent = "LISTENING";
+        callInstruction.textContent = "Listening... Speak in any language!";
+        liveIndicator.textContent = "● Live";
+      } else if (state === "speaking") {
+        haloWrapper.classList.add("is-live");
+        mainCallButton.className = "main-call-button ai-speaking";
+        callIcon.textContent = "🗣️";
+        callLabel.textContent = "SPEAKING";
+        callInstruction.textContent = "KinAssist is answering you...";
+        liveIndicator.textContent = "🔊 Speaking";
+      } else if (state === "urgent") {
+        haloWrapper.classList.add("is-live");
+        mainCallButton.className = "main-call-button";
+        callIcon.textContent = "🚨";
+        callLabel.textContent = "ALERT";
+        callInstruction.textContent = "Caregiver Alert Dispatched!";
+        liveIndicator.textContent = "⚠️ Urgent";
+      } else {
+        haloWrapper.classList.remove("is-live");
+        mainCallButton.className = "main-call-button";
+        callIcon.textContent = "🎙️";
+        callLabel.textContent = "TALK";
+        callInstruction.textContent = "Press button to speak";
+        liveIndicator.textContent = "Ready";
+      }
+    }
+
+    function addActionNotification(icon, title, details, isUrgent = false) {
+      const card = document.createElement("div");
+      card.className = "action-badge" + (isUrgent ? " urgent-alert" : "");
+      card.innerHTML = `
+        <span style="font-size: 28px;">${icon}</span>
+        <div>
+          <div>${title}</div>
+          <div style="font-size: 16px; font-weight: 500; opacity: 0.9;">${details}</div>
+        </div>
+      `;
+      actionFeed.prepend(card);
+      while (actionFeed.children.length > 3) {
+        actionFeed.removeChild(actionFeed.lastChild);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Web Audio Engine: 16kHz PCM Mic Capture & Resampling
+    // ---------------------------------------------------------------------------
+    function downsampleBuffer(buffer, inputSampleRate, outputSampleRate = 16000) {
+      if (inputSampleRate === outputSampleRate) {
+        const pcm16 = new Int16Array(buffer.length);
+        for (let i = 0; i < buffer.length; i++) {
+          const s = Math.max(-1, Math.min(1, buffer[i]));
+          pcm16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+        }
+        return pcm16.buffer;
+      }
+      const ratio = inputSampleRate / outputSampleRate;
+      const newLength = Math.round(buffer.length / ratio);
+      const result = new Int16Array(newLength);
+      let offsetResult = 0;
+      let offsetBuffer = 0;
+
+      while (offsetResult < result.length) {
+        const nextOffsetBuffer = Math.round((offsetResult + 1) * ratio);
+        let accum = 0, count = 0;
+        for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i++) {
+          accum += buffer[i];
+          count++;
+        }
+        const sample = count > 0 ? accum / count : 0;
+        const clamped = Math.max(-1, Math.min(1, sample));
+        result[offsetResult] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7FFF;
+        offsetResult++;
+        offsetBuffer = nextOffsetBuffer;
+      }
+      return result.buffer;
+    }
+
+    async function startAudioEngine() {
+    try {
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContextClass();
+        await audioContext.resume();
+
+        // 1. Запрашиваем микрофон с нативным подавлением эха и шумов
+        micStream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+                echoCancellation: true,    // Подавляет попадание динамиков в микрофон
+                noiseSuppression: true,    // Игнорирует дыхание и фоновый шум
+                autoGainControl: true      // Выравнивает уровень громкости
+            }
+        });
+
+        // 2. Инициализируем узлы Web Audio API
+        micSource = audioContext.createMediaStreamSource(micStream);
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 256;
+
+        scriptProcessor = audioContext.createScriptProcessor(2048, 1, 1);
+
+        // 3. Audio chunk streaming with smart speaker bleed echo-filter
+        scriptProcessor.onaudioprocess = (e) => {
+            if (!isConnected || isMuted || !ws || ws.readyState !== WebSocket.OPEN) return;
+            const inputData = e.inputBuffer.getChannelData(0);
+
+            // If assistant is actively speaking, only forward mic if senior speaks with clear intent (barge-in)
+            if (isAIspeaking) {
+                let energy = 0;
+                for (let i = 0; i < inputData.length; i++) {
+                    energy += Math.abs(inputData[i]);
+                }
+                const avgEnergy = energy / inputData.length;
+                if (avgEnergy < 0.035) {
+                    return; // Soft-suppress speaker acoustic bleed
+                }
+            }
+
+            const pcmChunk = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+            ws.send(pcmChunk);
+        };
+
+        // 4. Правильно связываем цепь аудиографики (без дублирования)
+        micSource.connect(analyserNode);
+        analyserNode.connect(scriptProcessor);
+        scriptProcessor.connect(audioContext.destination);
+
+        // 5. Запускаем анимацию и возвращаем статус
+        if (typeof startVisualizerAnimation === 'function') {
+            startVisualizerAnimation();
+        }
+
+        console.log("Audio Engine successfully initialized!");
+        return true;
+
+    } catch (err) {
+        console.error("Audio Engine Init Error:", err);
+        alert("Microphone permission required for KinAssist voice companion: " + err.message);
+        return false;
+    }
+}
+
+    function stopAudioEngine() {
+      if (animFrameId) cancelAnimationFrame(animFrameId);
+      if (scriptProcessor) {
+        scriptProcessor.disconnect();
+        scriptProcessor = null;
+      }
+      if (micSource) {
+        micSource.disconnect();
+        micSource = null;
+      }
+      if (micStream) {
+        micStream.getTracks().forEach(t => t.stop());
+        micStream = null;
+      }
+      stopAllPlayback();
+      if (audioContext) {
+        audioContext.close().catch(() => { });
+        audioContext = null;
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // Web Audio Engine: 24kHz PCM Playback & Instant Interruption
+    // ---------------------------------------------------------------------------
+    function playAudioChunk(arrayBuffer) {
+      if (!audioContext) return;
+      const int16Array = new Int16Array(arrayBuffer);
+      if (int16Array.length === 0) return;
+
+      const float32Array = new Float32Array(int16Array.length);
+      for (let i = 0; i < int16Array.length; i++) {
+        float32Array[i] = int16Array[i] / 32768.0;
+      }
+
+      // Gemini Live Output is 24000Hz mono PCM
+      const audioBuffer = audioContext.createBuffer(1, float32Array.length, 24000);
+      audioBuffer.getChannelData(0).set(float32Array);
+
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+
+      const now = audioContext.currentTime;
+      if (nextPlayTime < now) {
+        nextPlayTime = now + 0.02; // Small 20ms jitter buffer
+      }
+
+      source.start(nextPlayTime);
+      nextPlayTime += audioBuffer.duration;
+
+      activeAudioSources.push(source);
+      if (!isAIspeaking) {
+        isAIspeaking = true;
+        updateUIState("speaking", "KinAssist is Speaking...");
+      }
+
+      source.onended = () => {
+        const idx = activeAudioSources.indexOf(source);
+        if (idx !== -1) activeAudioSources.splice(idx, 1);
+        if (activeAudioSources.length === 0) {
+          isAIspeaking = false;
+          if (isConnected) {
+            updateUIState("connected", "KinAssist is Listening to You");
+          }
+        }
+      };
+    }
+
+    function stopAllPlayback() {
+      for (const src of activeAudioSources) {
+        try { src.stop(); } catch (e) { }
+      }
+      activeAudioSources = [];
+      nextPlayTime = 0;
+      isAIspeaking = false;
+    }
+
+    // ---------------------------------------------------------------------------
+    // Visualizer Animation
+    // ---------------------------------------------------------------------------
+    function startVisualizerAnimation() {
+      const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+      function render() {
+        if (!isConnected || !analyserNode) return;
+        analyserNode.getByteFrequencyData(dataArray);
+
+        let sum = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sum += dataArray[i];
+        }
+        const avg = sum / dataArray.length;
+        const scale = 1 + (avg / 255) * 0.22;
+
+        if (!isAIspeaking && mainCallButton) {
+          mainCallButton.style.transform = `scale(${scale})`;
+        }
+        animFrameId = requestAnimationFrame(render);
+      }
+      render();
+    }
+
+    // ---------------------------------------------------------------------------
+    // WebSocket Connection & Gemini Live Session Bridge
+    // ---------------------------------------------------------------------------
+    async function connectLiveSession() {
+      if (isConnected) return;
+      updateUIState("speaking", "Connecting to KinAssist...");
+
+      const audioReady = await startAudioEngine();
+      if (!audioReady) {
+        updateUIState("", "Microphone not enabled");
+        return;
+      }
+
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      const wsUrl = `${protocol}//${window.location.host}/ws/live`;
+      console.log("Connecting WebSocket to:", wsUrl);
+
+      ws = new WebSocket(wsUrl);
+      ws.binaryType = "arraybuffer";
+
+      ws.onopen = () => {
+        isConnected = true;
+        updateUIState("connected", "KinAssist Connected & Listening");
+        addActionNotification("💚", "Connected", "KinAssist Voice Session is Live");
+      };
+
+      ws.onmessage = (event) => {
+        // 1. Binary PCM Audio Chunks from Gemini Live API -> Speaker Output
+        if (event.data instanceof ArrayBuffer) {
+          playAudioChunk(event.data);
+          return;
+        }
+
+        // 2. JSON Protocol Messages (Transcripts, Tools, Alerts, Control Statuses)
+        try {
+          const msg = JSON.parse(event.data);
+
+          // Barge-in: Senior user interrupted the assistant while speaking
+          if (msg.type === "interrupted") {
+            console.log("Barge-in: Gemini speech interrupted by senior.");
+            stopAllPlayback();
+            updateUIState("connected", "KinAssist is Listening to You");
+          } 
+          // Real-time Text Transcripts for Assistant and Senior UI Subtitles
+          else if (msg.type === "transcript") {
+            if (msg.role === "user") {
+              currentSpeaker.textContent = "🧓 You:";
+              currentSpeaker.className = "dialogue-speaker user";
+              currentSubtitle.textContent = `"${msg.text}"`;
+            } else {
+              currentSpeaker.textContent = "💙 KinAssist:";
+              currentSpeaker.className = "dialogue-speaker";
+              currentSubtitle.textContent = `"${msg.text}"`;
+            }
+          } 
+          // Turn Complete: Gemini finished speaking a response turn (KEEP SOCKET OPEN)
+          else if (msg.type === "turn_complete") {
+            console.log("Turn complete: Assistant finished response. Ready for next input.");
+            updateUIState("connected", "KinAssist is Listening to You");
+          } 
+          // Tool Executions: Background Firestore persistence events (NO SOCKET DISCONNECT)
+          else if (msg.type === "tool_executed" || msg.type === "tool_execution") {
+            const toolName = msg.tool || msg.name;
+            console.log("Agent Tool executed successfully:", toolName);
+
+            if (toolName === "tech_support" || toolName === "tool_log_tech_support") {
+              addActionNotification("🛠️", "Simple Tech Guidance", "3 Simple Jargon-Free Steps Logged");
+            } else if (toolName === "companion_task" || toolName === "tool_log_companion_task") {
+              const taskTitle = (msg.args && msg.args.task_title) || msg.title || "Task Saved";
+              addActionNotification("📅", taskTitle, "Saved to your calendar & routines");
+            }
+          } 
+          // Urgent Alerts dispatched for Caregiver Notification
+          else if (msg.type === "alert" && msg.level === "URGENT") {
+            updateUIState("urgent", "Caregiver & Family Alert Dispatched!");
+            addActionNotification("🚨", "Urgent Alert Active", msg.reason || "Caregiver notified immediately", true);
+          } 
+          else if (msg.type === "urgent_alert_dispatched") {
+            updateUIState("urgent", "Caregiver Alert Dispatched!");
+            addActionNotification("🚨", "Urgent Alert Active", "Caregiver notified in background", true);
+          }
+          // Backend Status Notices
+          else if (msg.type === "status" && msg.status === "error") {
+            console.warn("KinAssist Server Status Warning:", msg.message);
+          }
+        } catch (err) {
+          console.error("JSON parse error on incoming WebSocket frame:", err);
+        }
+      };
+
+      ws.onclose = () => {
+        console.log("WebSocket Closed.");
+        disconnectLiveSession();
+      };
+
+      ws.onerror = (err) => {
+        console.error("WebSocket Error:", err);
+        disconnectLiveSession();
+      };
+    }
+
+    function disconnectLiveSession() {
+      isConnected = false;
+      stopAudioEngine();
+      if (ws) {
+        ws.close();
+        ws = null;
+      }
+      updateUIState("", "Tap Large Button to Talk");
+    }
+
+    // ---------------------------------------------------------------------------
+    // Event Listeners (Senior Accessibility Controls)
+    // ---------------------------------------------------------------------------
+    mainCallButton.addEventListener("click", () => {
+      if (!isConnected) {
+        connectLiveSession();
+      } else {
+        disconnectLiveSession();
+      }
+    });
+
+    btnEndCall.addEventListener("click", () => {
+      disconnectLiveSession();
+    });
+
+    btnMute.addEventListener("click", () => {
+      isMuted = !isMuted;
+      if (isMuted) {
+        muteIcon.textContent = "🔇";
+        btnMute.querySelector("#muteLabel").textContent = "Unmute";
+        btnMute.style.background = "#FFCDD2";
+      } else {
+        muteIcon.textContent = "🔊";
+        btnMute.querySelector("#muteLabel").textContent = "Mute";
+        btnMute.style.background = "#E2E8F0";
+      }
+    });
+
+    btnEmergency.addEventListener("click", () => {
+      if (!isConnected) {
+        connectLiveSession().then(() => {
+          setTimeout(triggerEmergencyAlert, 600);
+        });
+      } else {
+        triggerEmergencyAlert();
+      }
+    });
+
+    function triggerEmergencyAlert() {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: "urgent_trigger",
+          reason: "Emergency help button pressed by senior"
+        }));
+      }
+      updateUIState("urgent", "Emergency Alert Triggered!");
+      addActionNotification("🚨", "EMERGENCY ALERT", "Family & Caregivers Dispatched", true);
+      currentSpeaker.textContent = "🚨 KinAssist Emergency:";
+      currentSubtitle.textContent = '"Help is on the way. Stay calm, breathe slowly, and do not move. I am staying right here with you."';
+    }
+
+    btnToggleA11y.addEventListener("click", () => {
+      highContrast = !highContrast;
+      if (highContrast) {
+        document.body.classList.add("high-contrast-mode");
+        btnToggleA11y.style.background = "#FFEB3B";
+        btnToggleA11y.style.color = "#000000";
+      } else {
+        document.body.classList.remove("high-contrast-mode");
+        btnToggleA11y.style.background = "rgba(255, 255, 255, 0.2)";
+        btnToggleA11y.style.color = "#FFFFFF";
+      }
+    });
+
+    // ---------------------------------------------------------------------------
+    // Caregiver Logs Modal Logic
+    // ---------------------------------------------------------------------------
+    const btnOpenLogs = document.getElementById("btnOpenLogs");
+    const btnCloseLogs = document.getElementById("btnCloseLogs");
+    const logsModal = document.getElementById("logsModal");
+    const logsContainer = document.getElementById("logsContainer");
+
+    if (btnOpenLogs && logsModal) {
+      btnOpenLogs.addEventListener("click", () => {
+        logsModal.classList.add("is-open");
+        fetchCloudLogs();
+      });
+
+      btnCloseLogs.addEventListener("click", () => {
+        logsModal.classList.remove("is-open");
+      });
+
+      logsModal.addEventListener("click", (e) => {
+        if (e.target === logsModal) logsModal.classList.remove("is-open");
+      });
+    }
+
+    async function fetchCloudLogs() {
+      logsContainer.innerHTML = '<div style="text-align: center; color: #64748B; padding: 20px;">Fetching from Firestore (kinassist_logs)...</div>';
+      try {
+        const resp = await fetch('/api/logs?limit=25');
+        const data = await resp.json();
+        if (!data.logs || data.logs.length === 0) {
+          logsContainer.innerHTML = '<div style="text-align: center; color: #64748B; padding: 20px;">No events recorded yet. Interact with KinAssist to see logs here!</div>';
+          return;
+        }
+        logsContainer.innerHTML = '';
+        data.logs.forEach(log => {
+          const card = document.createElement("div");
+          const isUrgent = log.category === "urgent_alert" || log.status === "URGENT";
+          card.className = "log-card" + (isUrgent ? " urgent" : "");
+
+          let tagClass = "tech";
+          let tagTitle = "Tech Support";
+          if (log.category === "companion_task") { tagClass = "task"; tagTitle = "Companion Task"; }
+          if (isUrgent) { tagClass = "alert"; tagTitle = "URGENT ALERT"; }
+
+          const timeStr = log.created_at ? new Date(log.created_at).toLocaleTimeString() : "Just now";
+
+          let bodyHtml = "";
+          if (log.category === "tech_support") {
+            bodyHtml = `<div><strong>Device:</strong> ${log.device_or_app || 'Appliance'}</div>
+                        <div><strong>Issue:</strong> ${log.issue_description || ''}</div>
+                        ${log.steps_provided ? `<div><strong>Steps:</strong> ${log.steps_provided}</div>` : ''}`;
+          } else if (log.category === "companion_task") {
+            bodyHtml = `<div><strong>Type:</strong> ${log.task_type || 'routine'}</div>
+                        <div><strong>Details:</strong> ${log.description || ''}</div>
+                        ${log.scheduled_time ? `<div><strong>Schedule:</strong> ${log.scheduled_time}</div>` : ''}`;
+          } else if (log.category === "urgent_alert") {
+            bodyHtml = `<div><strong>Emergency:</strong> ${log.emergency_type || 'Distress'}</div>
+                        <div><strong>Details:</strong> ${log.details || ''}</div>
+                        <div><strong>Severity:</strong> <span style="color: #B71C1C; font-weight: bold;">${log.severity || 'CRITICAL'}</span></div>`;
+          }
+
+          card.innerHTML = `
+            <div class="log-card-header">
+              <span class="log-tag ${tagClass}">${tagTitle}</span>
+              <span class="log-time">${timeStr}</span>
+            </div>
+            ${bodyHtml}
+          `;
+          logsContainer.appendChild(card);
+        });
+      } catch (err) {
+        logsContainer.innerHTML = '<div style="text-align: center; color: #B71C1C; padding: 20px;">Error loading logs from server.</div>';
+      }
+    }
+  </script>
+</body>
+
+</html>
