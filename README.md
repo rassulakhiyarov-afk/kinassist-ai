@@ -146,7 +146,27 @@ Access the interface in your browser at `http://localhost:8080`.
 
 ## 6. Google Cloud Run Deployment
 
-Deploy seamlessly to Cloud Run with full WebSocket and session affinity support:
+### Option A: Direct Source Deploy (Recommended)
+
+If this is your first time deploying in a new GCP project, grant Cloud Build and Compute Engine the necessary permissions to read storage source buckets:
+
+```bash
+# 1. Ensure project ID variable is set
+export PROJECT_ID=$(gcloud config get-value project)
+export PROJECT_NUM=$(gcloud projects describe $PROJECT_ID --format="value(projectNumber)")
+
+# 2. Grant Storage Object Viewer permissions to the default compute service account
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${PROJECT_NUM}-compute@developer.gserviceaccount.com" \
+    --role="roles/storage.objectViewer"
+
+# 3. Grant Artifact Registry & Cloud Build permissions
+gcloud projects add-iam-policy-binding $PROJECT_ID \
+    --member="serviceAccount:${PROJECT_NUM}@cloudbuild.gserviceaccount.com" \
+    --role="roles/cloudbuild.builds.builder"
+```
+
+Then deploy directly with full WebSocket and session affinity support:
 
 ```bash
 gcloud run deploy kinassist-ai \
@@ -157,7 +177,29 @@ gcloud run deploy kinassist-ai \
   --port 8080 \
   --timeout 3600 \
   --session-affinity \
-  --set-env-vars GOOGLE_CLOUD_PROJECT=$GOOGLE_CLOUD_PROJECT,GOOGLE_CLOUD_LOCATION=us-central1
+  --set-env-vars GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,LIVE_MODEL=gemini-live-2.5-flash-native-audio
+```
+
+---
+
+### Option B: Build Container with Google Cloud Build (Alternative)
+
+If you prefer building a container image first:
+
+```bash
+# 1. Build container image using Cloud Build
+gcloud builds submit --tag gcr.io/${PROJECT_ID}/kinassist-ai:v1 .
+
+# 2. Deploy the built container to Cloud Run
+gcloud run deploy kinassist-ai \
+  --image gcr.io/${PROJECT_ID}/kinassist-ai:v1 \
+  --region us-central1 \
+  --platform managed \
+  --allow-unauthenticated \
+  --port 8080 \
+  --timeout 3600 \
+  --session-affinity \
+  --set-env-vars GOOGLE_CLOUD_PROJECT=$PROJECT_ID,GOOGLE_CLOUD_LOCATION=us-central1,LIVE_MODEL=gemini-live-2.5-flash-native-audio
 ```
 
 ---
