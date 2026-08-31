@@ -1,6 +1,0 @@
-{
-  "name": "KinAssist AI: Voice Companion for Seniors",
-  "description": "Real-time multilingual voice companion for elderly seniors and caregivers powered by Gemini Live API, Vertex AI, and Firestore.",
-  "requestFramePermissions": ["microphone"],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
