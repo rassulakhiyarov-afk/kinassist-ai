@@ -504,122 +504,123 @@ async def handle_live_session(websocket: WebSocket):
             # ----------------------------------------------------------------
             async def downstream_loop():
                 try:
-                    async for response in session.receive():
-                        # Protect each individual chunk processing from terminating the entire loop
-                        try:
-                            # 1. Handle Model Speech Audio & Transcripts
-                            server_content = getattr(response, "server_content", None)
-                            if server_content is not None:
-                                model_turn = getattr(server_content, "model_turn", None)
-                                if model_turn is not None and getattr(model_turn, "parts", None):
-                                    for part in model_turn.parts:
-                                        # Audio stream delivery
-                                        inline_data = getattr(part, "inline_data", None)
-                                        if inline_data is not None and getattr(inline_data, "data", None):
-                                            try:
-                                                await websocket.send_bytes(inline_data.data)
-                                            except Exception as send_bytes_err:
-                                                logger.warning(f"Failed to send audio bytes: {send_bytes_err}")
-
-                                        # Optional text transcript delivery
-                                        part_text = getattr(part, "text", None)
-                                        if part_text:
-                                            try:
-                                                await websocket.send_json({
-                                                    "type": "transcript",
-                                                    "role": "assistant",
-                                                    "text": part_text,
-                                                })
-                                            except Exception as send_text_err:
-                                                logger.warning(f"Failed to send transcript JSON: {send_text_err}")
-
-                                # Turn Completion Handling (Notify frontend to sync buffer playback)
-                                if getattr(server_content, "turn_complete", False):
-                                    try:
-                                        await websocket.send_json({"type": "turn_complete"})
-                                    except Exception:
-                                        pass
-
-                                # Barge-in Interruption Handling
-                                if getattr(server_content, "interrupted", False):
-                                    try:
-                                        await websocket.send_json({"type": "interrupted"})
-                                    except Exception:
-                                        pass
-
-                            # 2. Handle Tool / Function Calls (Immediate Unblocking & Non-Blocking Logging)
-                            tool_call = getattr(response, "tool_call", None)
-                            if tool_call is not None and getattr(tool_call, "function_calls", None):
-                                function_responses = []
-
-                                for fc in tool_call.function_calls:
-                                    call_id = getattr(fc, "id", None)
-                                    call_name = getattr(fc, "name", None)
-                                    raw_args = getattr(fc, "args", None)
-                                    call_args = dict(raw_args) if raw_args is not None else {}
-
-                                    logger.info(f"Executing Agent Tool: {call_name} (ID: {call_id})")
-
-                                    # Notify UI of action execution
-                                    try:
-                                        await websocket.send_json({
-                                            "type": "tool_executed",
-                                            "tool": call_name,
-                                            "name": call_name,
-                                            "args": call_args,
-                                        })
-                                    except Exception:
-                                        pass
-
-                                    # Wrap all database/tool writes in asyncio.create_task() to prevent blocking the stream
-                                    if call_name == "tool_log_tech_support":
-                                        asyncio.create_task(async_log_tech_support(call_args))
-                                    elif call_name == "tool_log_companion_task":
-                                        asyncio.create_task(async_log_companion_task(call_args))
-                                    elif call_name == "tool_trigger_urgent_alert":
-                                        asyncio.create_task(async_trigger_urgent_alert(call_args))
+                    while True:
+                        async for response in session.receive():
+                            # Protect each individual chunk processing from terminating the entire loop
+                            try:
+                                # 1. Handle Model Speech Audio & Transcripts
+                                server_content = getattr(response, "server_content", None)
+                                if server_content is not None:
+                                    model_turn = getattr(server_content, "model_turn", None)
+                                    if model_turn is not None and getattr(model_turn, "parts", None):
+                                        for part in model_turn.parts:
+                                            # Audio stream delivery
+                                            inline_data = getattr(part, "inline_data", None)
+                                            if inline_data is not None and getattr(inline_data, "data", None):
+                                                try:
+                                                    await websocket.send_bytes(inline_data.data)
+                                                except Exception as send_bytes_err:
+                                                    logger.warning(f"Failed to send audio bytes: {send_bytes_err}")
+    
+                                            # Optional text transcript delivery
+                                            part_text = getattr(part, "text", None)
+                                            if part_text:
+                                                try:
+                                                    await websocket.send_json({
+                                                        "type": "transcript",
+                                                        "role": "assistant",
+                                                        "text": part_text,
+                                                    })
+                                                except Exception as send_text_err:
+                                                    logger.warning(f"Failed to send transcript JSON: {send_text_err}")
+    
+                                    # Turn Completion Handling (Notify frontend to sync buffer playback)
+                                    if getattr(server_content, "turn_complete", False):
+                                        try:
+                                            await websocket.send_json({"type": "turn_complete"})
+                                        except Exception:
+                                            pass
+    
+                                    # Barge-in Interruption Handling
+                                    if getattr(server_content, "interrupted", False):
+                                        try:
+                                            await websocket.send_json({"type": "interrupted"})
+                                        except Exception:
+                                            pass
+    
+                                # 2. Handle Tool / Function Calls (Immediate Unblocking & Non-Blocking Logging)
+                                tool_call = getattr(response, "tool_call", None)
+                                if tool_call is not None and getattr(tool_call, "function_calls", None):
+                                    function_responses = []
+    
+                                    for fc in tool_call.function_calls:
+                                        call_id = getattr(fc, "id", None)
+                                        call_name = getattr(fc, "name", None)
+                                        raw_args = getattr(fc, "args", None)
+                                        call_args = dict(raw_args) if raw_args is not None else {}
+    
+                                        logger.info(f"Executing Agent Tool: {call_name} (ID: {call_id})")
+    
+                                        # Notify UI of action execution
                                         try:
                                             await websocket.send_json({
-                                                "type": "alert",
-                                                "level": "URGENT",
-                                                "reason": call_args.get("details", "Wellness alert triggered"),
+                                                "type": "tool_executed",
+                                                "tool": call_name,
+                                                "name": call_name,
+                                                "args": call_args,
                                             })
                                         except Exception:
                                             pass
-
-                                    # Build response payload for Live Session unblocking
-                                    function_responses.append(
-                                        types.FunctionResponse(
-                                            id=call_id,
-                                            name=call_name,
-                                            response={"output": {"status": "ok", "message": "Task processed successfully."}},
-                                        )
-                                    )
-
-                                # Send tool response back to Gemini immediately to unblock voice reply
-                                if function_responses:
-                                    try:
-                                        if hasattr(session, "send_tool_response"):
-                                            await session.send_tool_response(function_responses=function_responses)
-                                        elif hasattr(session, "send"):
+    
+                                        # Wrap all database/tool writes in asyncio.create_task() to prevent blocking the stream
+                                        if call_name == "tool_log_tech_support":
+                                            asyncio.create_task(async_log_tech_support(call_args))
+                                        elif call_name == "tool_log_companion_task":
+                                            asyncio.create_task(async_log_companion_task(call_args))
+                                        elif call_name == "tool_trigger_urgent_alert":
+                                            asyncio.create_task(async_trigger_urgent_alert(call_args))
                                             try:
-                                                await session.send(
-                                                    input=types.LiveClientToolResponse(
-                                                        function_responses=function_responses
+                                                await websocket.send_json({
+                                                    "type": "alert",
+                                                    "level": "URGENT",
+                                                    "reason": call_args.get("details", "Wellness alert triggered"),
+                                                })
+                                            except Exception:
+                                                pass
+    
+                                        # Build response payload for Live Session unblocking
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=call_id,
+                                                name=call_name,
+                                                response={"output": {"status": "ok", "message": "Task processed successfully."}},
+                                            )
+                                        )
+    
+                                    # Send tool response back to Gemini immediately to unblock voice reply
+                                    if function_responses:
+                                        try:
+                                            if hasattr(session, "send_tool_response"):
+                                                await session.send_tool_response(function_responses=function_responses)
+                                            elif hasattr(session, "send"):
+                                                try:
+                                                    await session.send(
+                                                        input=types.LiveClientToolResponse(
+                                                            function_responses=function_responses
+                                                        )
                                                     )
-                                                )
-                                            except TypeError:
-                                                await session.send(
-                                                    types.LiveClientToolResponse(
-                                                        function_responses=function_responses
+                                                except TypeError:
+                                                    await session.send(
+                                                        types.LiveClientToolResponse(
+                                                            function_responses=function_responses
+                                                        )
                                                     )
-                                                )
-                                    except Exception as tool_resp_err:
-                                        logger.error(f"Error sending tool response to Gemini: {tool_resp_err}")
-
-                        except Exception as chunk_err:
-                            logger.warning(f"Handled benign chunk variation in downstream loop: {chunk_err}")
-                            continue
+                                        except Exception as tool_resp_err:
+                                            logger.error(f"Error sending tool response to Gemini: {tool_resp_err}")
+    
+                            except Exception as chunk_err:
+                                logger.warning(f"Handled benign chunk variation in downstream loop: {chunk_err}")
+                                continue
 
                 except (WebSocketDisconnect, RuntimeError):
                     logger.info("Senior client disconnected (downstream).")
@@ -628,13 +629,14 @@ async def handle_live_session(websocket: WebSocket):
                 except Exception as down_err:
                     logger.error(f"Error in downstream audio stream: {down_err}", exc_info=True)
 
-            # Run upstream and downstream concurrently with FIRST_EXCEPTION so tasks stay alive properly
+            # Run upstream and downstream concurrently
+            # Use FIRST_COMPLETED so that if Gemini closes the connection OR the browser disconnects, we cleanup cleanly
             upstream_task = asyncio.create_task(upstream_loop())
             downstream_task = asyncio.create_task(downstream_loop())
 
             done, pending = await asyncio.wait(
                 [upstream_task, downstream_task],
-                return_when=asyncio.FIRST_EXCEPTION,
+                return_when=asyncio.FIRST_COMPLETED,
             )
 
             for task in pending:

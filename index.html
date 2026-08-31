@@ -839,27 +839,9 @@
           if (!isConnected || isMuted || !ws || ws.readyState !== WebSocket.OPEN) return;
           const inputData = e.inputBuffer.getChannelData(0);
 
-          // Calculate Root Mean Square (RMS) energy of microphone chunk
-          let sumSquares = 0;
-          for (let i = 0; i < inputData.length; i++) {
-            sumSquares += inputData[i] * inputData[i];
-          }
-          const rms = Math.sqrt(sumSquares / inputData.length);
-
-          // If AI is speaking, filter speaker echo unless user intentionally speaks over (barge-in)
-          if (isAIspeaking) {
-            if (rms < 0.05) {
-              return; // Suppress speaker acoustic feedback from feeding back to Gemini
-            }
-            // User intentionally spoke over the AI -> Trigger instant barge-in interruption
-            console.log("User barge-in detected (RMS:", rms.toFixed(4), ")");
-            stopAllPlayback();
-            if (isConnected) {
-              updateUIState("connected", "KinAssist is Listening to You");
-            }
-          }
-
-          // Active speech: downsample and forward to Gemini Live API
+          // Continuously downsample and forward to Gemini Live API
+          // The browser's native echoCancellation handles speaker feedback,
+          // and Gemini's VAD handles turn completion natively.
           const pcmChunk = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
           ws.send(pcmChunk);
         };
