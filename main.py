@@ -33,7 +33,7 @@ LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Primary Live Voice Model (Gemini Live Audio - Vertex AI)
-LIVE_MODEL = os.getenv("LIVE_MODEL", "gemini-2.0-flash-exp")
+LIVE_MODEL = os.getenv("LIVE_MODEL", "gemini-live-2.5-flash-native-audio")
 
 # ============================================================================
 # GOOGLE GENAI CLIENT (VERTEX AI / GCP CREDITS)
