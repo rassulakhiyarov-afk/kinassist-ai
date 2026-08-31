@@ -32,8 +32,8 @@ PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT") or os.getenv("PROJECT_ID", "proje
 LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# Primary Live Voice Model (Gemini Live Audio)
-LIVE_MODEL = os.getenv("LIVE_MODEL", "gemini-live-2.5-flash-native-audio")
+# Primary Live Voice Model (Gemini Live Audio - Vertex AI)
+LIVE_MODEL = os.getenv("LIVE_MODEL", "gemini-2.0-flash-exp")
 
 # ============================================================================
 # GOOGLE GENAI CLIENT (VERTEX AI / GCP CREDITS)
