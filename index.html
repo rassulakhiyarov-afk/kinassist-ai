@@ -834,33 +834,29 @@
 
         scriptProcessor = audioContext.createScriptProcessor(2048, 1, 1);
 
-        // 3. Audio chunk streaming with Continuous Noise Gate (RMS calculation)
+        // 3. Audio chunk streaming with Echo Suppression & Barge-in
         scriptProcessor.onaudioprocess = (e) => {
           if (!isConnected || isMuted || !ws || ws.readyState !== WebSocket.OPEN) return;
           const inputData = e.inputBuffer.getChannelData(0);
 
-          // Calculate Root Mean Square (RMS) energy of every microphone chunk
+          // Calculate Root Mean Square (RMS) energy of microphone chunk
           let sumSquares = 0;
           for (let i = 0; i < inputData.length; i++) {
             sumSquares += inputData[i] * inputData[i];
           }
           const rms = Math.sqrt(sumSquares / inputData.length);
-          const targetSampleCount = Math.round(inputData.length * (16000 / audioContext.sampleRate));
 
-          // Continuous Noise Gate:
-          // If the assistant is speaking, only let loud intentional speech (RMS > 0.06) barge-in.
-          // If energy is below 0.035, send a buffer of absolute silence (zeros) instead of returning!
-          // This forces Gemini's VAD to recognize silence transitions and prevents hot-mic lockups.
+          // If AI is speaking, filter speaker echo unless user intentionally speaks over (barge-in)
           if (isAIspeaking) {
-            if (rms < 0.06) {
-              const silencePcm = new Int16Array(targetSampleCount);
-              ws.send(silencePcm.buffer);
-              return;
+            if (rms < 0.05) {
+              return; // Suppress speaker acoustic feedback from feeding back to Gemini
             }
-          } else if (rms < 0.035) {
-            const silencePcm = new Int16Array(targetSampleCount);
-            ws.send(silencePcm.buffer);
-            return;
+            // User intentionally spoke over the AI -> Trigger instant barge-in interruption
+            console.log("User barge-in detected (RMS:", rms.toFixed(4), ")");
+            stopAllPlayback();
+            if (isConnected) {
+              updateUIState("connected", "KinAssist is Listening to You");
+            }
           }
 
           // Active speech: downsample and forward to Gemini Live API
@@ -952,14 +948,14 @@
         const idx = activeAudioSources.indexOf(source);
         if (idx !== -1) activeAudioSources.splice(idx, 1);
 
-        // Check if all scheduled audio chunks have finished playing through the speakers
-        const currentTime = audioContext ? audioContext.currentTime : 0;
-        if (activeAudioSources.length === 0 && currentTime >= nextPlayTime - 0.05) {
+        // When all scheduled audio chunks have finished playing through the speakers
+        if (activeAudioSources.length === 0) {
           isAIspeaking = false;
+          nextPlayTime = 0;
+          turnCompletePending = false;
           if (isConnected) {
             updateUIState("connected", "KinAssist is Listening to You");
           }
-          turnCompletePending = false;
         }
       };
     }
@@ -1058,14 +1054,13 @@
               currentSubtitle.textContent = `"${msg.text}"`;
             }
           } 
-          // Turn Complete: Gemini finished generating response turn.
-          // Audio buffer tracking desync fix: Only switch UI to Listening when buffer playback is finished.
+          // Turn Complete: Gemini finished generating response turn
           else if (msg.type === "turn_complete") {
-            console.log("Turn complete received from Gemini. Syncing with audio playback...");
+            console.log("Turn complete received from Gemini.");
             turnCompletePending = true;
-            const currentTime = audioContext ? audioContext.currentTime : 0;
-            if (activeAudioSources.length === 0 && currentTime >= nextPlayTime - 0.05) {
+            if (activeAudioSources.length === 0) {
               isAIspeaking = false;
+              nextPlayTime = 0;
               turnCompletePending = false;
               if (isConnected) {
                 updateUIState("connected", "KinAssist is Listening to You");
