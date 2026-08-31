@@ -39,7 +39,7 @@ LIVE_MODEL = os.getenv("LIVE_MODEL", "gemini-live-2.5-flash-native-audio")
 # GOOGLE GENAI CLIENT (VERTEX AI / GCP CREDITS)
 # ============================================================================
 def init_genai_client() -> genai.Client:
-    """Initializes the official Google GenAI SDK v2 client using Vertex AI."""
+    """Initializes the official Google GenAI SDK client using Vertex AI or API key."""
     if GEMINI_API_KEY and not os.getenv("GOOGLE_CLOUD_PROJECT"):
         logger.info("Initializing GenAI Client with GEMINI_API_KEY fallback.")
         return genai.Client(api_key=GEMINI_API_KEY)
@@ -352,7 +352,7 @@ async def health_check():
 async def handle_live_session(websocket: WebSocket):
     """
     Robust, fault-tolerant bidirectional streaming session between browser and Gemini Live API.
-    Guards against mid-stream connection drops, safe part handling, and unblocked tool execution.
+    Guards against mid-stream connection drops, safe part handling, non-blocking tools, and unblocked response flow.
     """
     await websocket.accept()
     logger.info("Senior client connected to KinAssist voice stream.")
@@ -392,7 +392,7 @@ async def handle_live_session(websocket: WebSocket):
                         if message.get("type") == "websocket.disconnect":
                             break
 
-                        # 1. Raw Binary Audio Chunks (16kHz PCM)
+                        # 1. Raw Binary Audio Chunks (16kHz PCM Int16)
                         if "bytes" in message and message["bytes"]:
                             data = message["bytes"]
                             try:
@@ -428,6 +428,7 @@ async def handle_live_session(websocket: WebSocket):
 
                                 if msg_type == "urgent_trigger":
                                     reason = payload.get("reason", "Senior pressed emergency help button")
+                                    # Non-blocking async firestore logging
                                     asyncio.create_task(async_trigger_urgent_alert({
                                         "emergency_type": "Manual Emergency Trigger",
                                         "details": reason,
@@ -532,7 +533,7 @@ async def handle_live_session(websocket: WebSocket):
                                             except Exception as send_text_err:
                                                 logger.warning(f"Failed to send transcript JSON: {send_text_err}")
 
-                                # Turn Completion Handling (Keep socket open for next turn)
+                                # Turn Completion Handling (Notify frontend to sync buffer playback)
                                 if getattr(server_content, "turn_complete", False):
                                     try:
                                         await websocket.send_json({"type": "turn_complete"})
@@ -546,7 +547,7 @@ async def handle_live_session(websocket: WebSocket):
                                     except Exception:
                                         pass
 
-                            # 2. Handle Tool / Function Calls (Immediate Unblocking)
+                            # 2. Handle Tool / Function Calls (Immediate Unblocking & Non-Blocking Logging)
                             tool_call = getattr(response, "tool_call", None)
                             if tool_call is not None and getattr(tool_call, "function_calls", None):
                                 function_responses = []
@@ -570,7 +571,7 @@ async def handle_live_session(websocket: WebSocket):
                                     except Exception:
                                         pass
 
-                                    # Asynchronous non-blocking Firestore write
+                                    # Wrap all database/tool writes in asyncio.create_task() to prevent blocking the stream
                                     if call_name == "tool_log_tech_support":
                                         asyncio.create_task(async_log_tech_support(call_args))
                                     elif call_name == "tool_log_companion_task":
@@ -627,7 +628,7 @@ async def handle_live_session(websocket: WebSocket):
                 except Exception as down_err:
                     logger.error(f"Error in downstream audio stream: {down_err}", exc_info=True)
 
-            # Run upstream and downstream concurrently
+            # Run upstream and downstream concurrently with FIRST_EXCEPTION so tasks stay alive properly
             upstream_task = asyncio.create_task(upstream_loop())
             downstream_task = asyncio.create_task(downstream_loop())
 

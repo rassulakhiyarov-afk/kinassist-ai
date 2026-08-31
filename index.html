@@ -692,6 +692,7 @@
     let isAIspeaking = false;
     let isMuted = false;
     let highContrast = false;
+    let turnCompletePending = false;
 
     let ws = null;
     let audioContext = null;
@@ -812,67 +813,80 @@
     }
 
     async function startAudioEngine() {
-    try {
+      try {
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         audioContext = new AudioContextClass();
         await audioContext.resume();
 
-        // 1. Запрашиваем микрофон с нативным подавлением эха и шумов
+        // 1. Request microphone with native echo cancellation, noise suppression, and auto gain
         micStream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                echoCancellation: true,    // Подавляет попадание динамиков в микрофон
-                noiseSuppression: true,    // Игнорирует дыхание и фоновый шум
-                autoGainControl: true      // Выравнивает уровень громкости
-            }
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
         });
 
-        // 2. Инициализируем узлы Web Audio API
+        // 2. Initialize Web Audio API nodes
         micSource = audioContext.createMediaStreamSource(micStream);
         analyserNode = audioContext.createAnalyser();
         analyserNode.fftSize = 256;
 
         scriptProcessor = audioContext.createScriptProcessor(2048, 1, 1);
 
-        // 3. Audio chunk streaming with smart speaker bleed echo-filter
+        // 3. Audio chunk streaming with Continuous Noise Gate (RMS calculation)
         scriptProcessor.onaudioprocess = (e) => {
-            if (!isConnected || isMuted || !ws || ws.readyState !== WebSocket.OPEN) return;
-            const inputData = e.inputBuffer.getChannelData(0);
+          if (!isConnected || isMuted || !ws || ws.readyState !== WebSocket.OPEN) return;
+          const inputData = e.inputBuffer.getChannelData(0);
 
-            // If assistant is actively speaking, only forward mic if senior speaks with clear intent (barge-in)
-            if (isAIspeaking) {
-                let energy = 0;
-                for (let i = 0; i < inputData.length; i++) {
-                    energy += Math.abs(inputData[i]);
-                }
-                const avgEnergy = energy / inputData.length;
-                if (avgEnergy < 0.035) {
-                    return; // Soft-suppress speaker acoustic bleed
-                }
+          // Calculate Root Mean Square (RMS) energy of every microphone chunk
+          let sumSquares = 0;
+          for (let i = 0; i < inputData.length; i++) {
+            sumSquares += inputData[i] * inputData[i];
+          }
+          const rms = Math.sqrt(sumSquares / inputData.length);
+          const targetSampleCount = Math.round(inputData.length * (16000 / audioContext.sampleRate));
+
+          // Continuous Noise Gate:
+          // If the assistant is speaking, only let loud intentional speech (RMS > 0.06) barge-in.
+          // If energy is below 0.035, send a buffer of absolute silence (zeros) instead of returning!
+          // This forces Gemini's VAD to recognize silence transitions and prevents hot-mic lockups.
+          if (isAIspeaking) {
+            if (rms < 0.06) {
+              const silencePcm = new Int16Array(targetSampleCount);
+              ws.send(silencePcm.buffer);
+              return;
             }
+          } else if (rms < 0.035) {
+            const silencePcm = new Int16Array(targetSampleCount);
+            ws.send(silencePcm.buffer);
+            return;
+          }
 
-            const pcmChunk = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
-            ws.send(pcmChunk);
+          // Active speech: downsample and forward to Gemini Live API
+          const pcmChunk = downsampleBuffer(inputData, audioContext.sampleRate, 16000);
+          ws.send(pcmChunk);
         };
 
-        // 4. Правильно связываем цепь аудиографики (без дублирования)
+        // 4. Connect audio graph
         micSource.connect(analyserNode);
         analyserNode.connect(scriptProcessor);
         scriptProcessor.connect(audioContext.destination);
 
-        // 5. Запускаем анимацию и возвращаем статус
+        // 5. Start visualizer
         if (typeof startVisualizerAnimation === 'function') {
-            startVisualizerAnimation();
+          startVisualizerAnimation();
         }
 
         console.log("Audio Engine successfully initialized!");
         return true;
 
-    } catch (err) {
+      } catch (err) {
         console.error("Audio Engine Init Error:", err);
         alert("Microphone permission required for KinAssist voice companion: " + err.message);
         return false;
+      }
     }
-}
 
     function stopAudioEngine() {
       if (animFrameId) cancelAnimationFrame(animFrameId);
@@ -896,10 +910,14 @@
     }
 
     // ---------------------------------------------------------------------------
-    // Web Audio Engine: 24kHz PCM Playback & Instant Interruption
+    // Web Audio Engine: 24kHz PCM Playback, Buffer Tracking & Desync Fix
     // ---------------------------------------------------------------------------
     function playAudioChunk(arrayBuffer) {
       if (!audioContext) return;
+      if (audioContext.state === 'suspended') {
+        audioContext.resume().catch(() => { });
+      }
+
       const int16Array = new Int16Array(arrayBuffer);
       if (int16Array.length === 0) return;
 
@@ -933,11 +951,15 @@
       source.onended = () => {
         const idx = activeAudioSources.indexOf(source);
         if (idx !== -1) activeAudioSources.splice(idx, 1);
-        if (activeAudioSources.length === 0) {
+
+        // Check if all scheduled audio chunks have finished playing through the speakers
+        const currentTime = audioContext ? audioContext.currentTime : 0;
+        if (activeAudioSources.length === 0 && currentTime >= nextPlayTime - 0.05) {
           isAIspeaking = false;
           if (isConnected) {
             updateUIState("connected", "KinAssist is Listening to You");
           }
+          turnCompletePending = false;
         }
       };
     }
@@ -949,6 +971,7 @@
       activeAudioSources = [];
       nextPlayTime = 0;
       isAIspeaking = false;
+      turnCompletePending = false;
     }
 
     // ---------------------------------------------------------------------------
@@ -1002,6 +1025,11 @@
       };
 
       ws.onmessage = (event) => {
+        // Explicitly resume audioContext on incoming message to prevent browser auto-suspension
+        if (audioContext && audioContext.state === 'suspended') {
+          audioContext.resume().catch(() => { });
+        }
+
         // 1. Binary PCM Audio Chunks from Gemini Live API -> Speaker Output
         if (event.data instanceof ArrayBuffer) {
           playAudioChunk(event.data);
@@ -1030,10 +1058,19 @@
               currentSubtitle.textContent = `"${msg.text}"`;
             }
           } 
-          // Turn Complete: Gemini finished speaking a response turn (KEEP SOCKET OPEN)
+          // Turn Complete: Gemini finished generating response turn.
+          // Audio buffer tracking desync fix: Only switch UI to Listening when buffer playback is finished.
           else if (msg.type === "turn_complete") {
-            console.log("Turn complete: Assistant finished response. Ready for next input.");
-            updateUIState("connected", "KinAssist is Listening to You");
+            console.log("Turn complete received from Gemini. Syncing with audio playback...");
+            turnCompletePending = true;
+            const currentTime = audioContext ? audioContext.currentTime : 0;
+            if (activeAudioSources.length === 0 && currentTime >= nextPlayTime - 0.05) {
+              isAIspeaking = false;
+              turnCompletePending = false;
+              if (isConnected) {
+                updateUIState("connected", "KinAssist is Listening to You");
+              }
+            }
           } 
           // Tool Executions: Background Firestore persistence events (NO SOCKET DISCONNECT)
           else if (msg.type === "tool_executed" || msg.type === "tool_execution") {
